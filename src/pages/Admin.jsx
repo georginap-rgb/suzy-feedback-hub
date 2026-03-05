@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { DEFAULT_TEAM_MAPPING } from '../utils/teamDetection'
 import { testAuth, listChannels } from '../services/slackService'
+import { testGitHubAuth } from '../services/githubService'
 
 const STORAGE_KEY = 'suzy-admin-config'
 
@@ -31,8 +32,10 @@ const DEFAULT_CONFIG = {
     lookback: '24h',
   },
   github: {
-    repo: 'suzy/one-suzy',
-    project: 'One Suzy Board',
+    token: '',
+    repo: 'crowdtap/suzy.onesuzy',
+    org: 'crowdtap',
+    projectNumber: 2,
     defaultLabels: 'slack_feedback',
   },
   teamMapping: DEFAULT_TEAM_MAPPING,
@@ -245,16 +248,94 @@ function SlackConfig({ slack, onChange }) {
 
 // ── GitHub Config ─────────────────────────────────────────────────────────────
 function GitHubConfig({ github, onChange }) {
+  const [showToken, setShowToken] = useState(false)
+  const [testState, setTestState] = useState(null)
+
+  const handleTest = async () => {
+    if (!github.token?.trim()) {
+      setTestState({ ok: false, message: 'Enter a Personal Access Token first.' })
+      return
+    }
+    setTestState('loading')
+    try {
+      const { login } = await testGitHubAuth(github.token.trim())
+      setTestState({ ok: true, message: `Connected as @${login}` })
+    } catch (err) {
+      setTestState({ ok: false, message: err.message })
+    }
+  }
+
   return (
     <div className="space-y-4">
-      <Field label="Repository" hint="org/repo">
-        <input type="text" value={github.repo} onChange={e => onChange('repo', e.target.value)} className={inputClass} placeholder="suzy/one-suzy" />
+      <Field label="Personal Access Token" hint="needs repo + project scopes">
+        <div className="relative">
+          <input
+            type={showToken ? 'text' : 'password'}
+            value={github.token ?? ''}
+            onChange={e => onChange('token', e.target.value)}
+            className={inputClass + ' pr-20'}
+            placeholder="ghp_XXXXXXXXXXXXXXXXXXXX"
+            autoComplete="off"
+            spellCheck="false"
+          />
+          <button
+            type="button"
+            onClick={() => setShowToken(v => !v)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 font-medium transition-colors"
+          >
+            {showToken ? 'Hide' : 'Show'}
+          </button>
+        </div>
+        <p className="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
+          Create at{' '}
+          <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600 dark:hover:text-gray-300">
+            github.com/settings/tokens
+          </a>
+          {' '}with scopes:{' '}
+          <code className="font-mono text-[11px] bg-gray-100 dark:bg-gray-800 px-1 rounded">repo</code>{' '}
+          <code className="font-mono text-[11px] bg-gray-100 dark:bg-gray-800 px-1 rounded">project</code>
+        </p>
       </Field>
-      <Field label="Project board name">
-        <input type="text" value={github.project} onChange={e => onChange('project', e.target.value)} className={inputClass} placeholder="One Suzy Board" />
+
+      <div>
+        <button
+          onClick={handleTest}
+          disabled={testState === 'loading'}
+          className="px-4 py-2 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+        >
+          {testState === 'loading' ? (
+            <span className="flex items-center gap-1.5">
+              <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Testing…
+            </span>
+          ) : 'Test Connection'}
+        </button>
+        {testState && testState !== 'loading' && (
+          <div className={`mt-2 flex items-start gap-2 text-xs px-3 py-2 rounded-lg ${
+            testState.ok
+              ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800'
+              : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800'
+          }`}>
+            <span className="mt-0.5">{testState.ok ? '✓' : '✗'}</span>
+            <span>{testState.message}</span>
+          </div>
+        )}
+      </div>
+
+      <Field label="Repository" hint="org/repo">
+        <input type="text" value={github.repo ?? 'crowdtap/suzy.onesuzy'} onChange={e => onChange('repo', e.target.value)} className={inputClass} placeholder="crowdtap/suzy.onesuzy" />
+      </Field>
+      <Field label="Organization" hint="for project board lookup">
+        <input type="text" value={github.org ?? 'crowdtap'} onChange={e => onChange('org', e.target.value)} className={inputClass} placeholder="crowdtap" />
+      </Field>
+      <Field label="Project number" hint="from the project URL — e.g. /projects/2">
+        <input type="number" value={github.projectNumber ?? 2} onChange={e => onChange('projectNumber', parseInt(e.target.value, 10))} className={inputClass + ' w-32'} min="1" />
       </Field>
       <Field label="Default labels" hint="comma-separated">
-        <input type="text" value={github.defaultLabels} onChange={e => onChange('defaultLabels', e.target.value)} className={inputClass} placeholder="slack_feedback" />
+        <input type="text" value={github.defaultLabels ?? 'slack_feedback'} onChange={e => onChange('defaultLabels', e.target.value)} className={inputClass} placeholder="slack_feedback" />
       </Field>
     </div>
   )
