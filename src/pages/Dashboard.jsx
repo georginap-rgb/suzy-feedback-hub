@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFeedback } from '../contexts/FeedbackContext'
 import DailyDigest from '../components/dashboard/DailyDigest'
@@ -6,7 +7,7 @@ import FeedbackCard from '../components/dashboard/FeedbackCard'
 import GitHubModal from '../components/modals/GitHubModal'
 import EditModal from '../components/modals/EditModal'
 
-function SyncBar({ isLoading, syncError, lastSynced, onSync, onDismissError }) {
+function SyncBar({ isLoading, lastSynced, onSync }) {
   return (
     <div className="flex items-center justify-between mb-5">
       <div className="flex items-center gap-3">
@@ -25,7 +26,6 @@ function SyncBar({ isLoading, syncError, lastSynced, onSync, onDismissError }) {
             </>
           ) : (
             <>
-              {/* Slack hash icon */}
               <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zm10.122 2.521a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.268 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zm-2.523 10.122a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.268a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"/>
               </svg>
@@ -71,7 +71,15 @@ function ErrorBanner({ message, onDismiss }) {
   )
 }
 
-function EmptyState({ hasFilters }) {
+function EmptyState({ tab }) {
+  const messages = {
+    active: { title: 'No active feedback', sub: 'Sync Slack to pull the latest messages, or check your filters.' },
+    saved: { title: 'Nothing saved for later', sub: 'Click "Later" on any card to park it here.' },
+    pushed: { title: 'Nothing pushed to GitHub yet', sub: 'Use "→ GitHub" on a card to send it to your project board.' },
+    dismissed: { title: 'No dismissed items', sub: 'Dismissed feedback will appear here.' },
+  }
+  const { title, sub } = messages[tab] ?? messages.active
+
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <div className="w-14 h-14 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-4">
@@ -79,55 +87,104 @@ function EmptyState({ hasFilters }) {
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
         </svg>
       </div>
-      <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-        {hasFilters ? 'No items match your filters' : 'No feedback items'}
-      </p>
-      <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">
-        {hasFilters ? 'Try adjusting your filters or search' : 'Click "Sync Slack" to pull the latest messages'}
-      </p>
+      <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{title}</p>
+      <p className="text-xs text-gray-400 dark:text-gray-600 mt-1 max-w-xs">{sub}</p>
     </div>
   )
 }
 
+const TABS = [
+  { id: 'active', label: 'Active', countKey: 'active' },
+  { id: 'saved', label: 'Later', countKey: 'saved' },
+  { id: 'pushed', label: 'On GitHub', countKey: 'pushed' },
+  { id: 'dismissed', label: 'Dismissed', countKey: 'dismissed' },
+]
+
 export default function Dashboard() {
   const {
-    filteredItems, filters,
+    activeItems, savedItems, pushedItems, dismissedItems,
+    stats,
     githubModal, editModal,
     isLoading, syncError, setSyncError, lastSynced,
     syncFromSlack,
   } = useFeedback()
 
-  const hasActiveFilters =
-    filters.type !== 'All' ||
-    filters.priority !== 'All' ||
-    filters.team !== 'All' ||
-    filters.status !== 'All' ||
-    filters.search.trim() !== ''
+  const [activeTab, setActiveTab] = useState('active')
+
+  const tabItems = {
+    active: activeItems,
+    saved: savedItems,
+    pushed: pushedItems,
+    dismissed: dismissedItems,
+  }
+
+  const currentItems = tabItems[activeTab] ?? []
+
+  // Filter bar only applies to active/saved (dismissed is unfiltered, pushed is archive)
+  const showFilterBar = activeTab === 'active' || activeTab === 'saved'
 
   return (
     <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
       <SyncBar
         isLoading={isLoading}
-        syncError={syncError}
         lastSynced={lastSynced}
         onSync={syncFromSlack}
-        onDismissError={() => setSyncError(null)}
       />
 
       <ErrorBanner message={syncError} onDismiss={() => setSyncError(null)} />
 
       <DailyDigest />
-      <FilterBar />
 
-      {filteredItems.length === 0 ? (
-        <EmptyState hasFilters={hasActiveFilters} />
+      {/* Tabs */}
+      <div className="flex items-center gap-1 mb-5 border-b border-gray-200 dark:border-gray-800">
+        {TABS.map(tab => {
+          const count = stats[tab.countKey] ?? 0
+          const isActive = activeTab === tab.id
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors rounded-t-lg -mb-px ${
+                isActive
+                  ? 'text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-800 border-b-white dark:border-b-gray-950 bg-white dark:bg-gray-950'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 border border-transparent'
+              }`}
+            >
+              {tab.label}
+              {count > 0 && (
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
+                  isActive
+                    ? tab.id === 'dismissed'
+                      ? 'bg-gray-100 dark:bg-gray-800 text-gray-500'
+                      : tab.id === 'pushed'
+                        ? 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400'
+                        : tab.id === 'saved'
+                          ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                          : 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900'
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-500'
+                }`}>
+                  {count}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Filter bar — only on active/saved tabs */}
+      {showFilterBar && <FilterBar />}
+
+      {/* Card list */}
+      {currentItems.length === 0 ? (
+        <EmptyState tab={activeTab} />
       ) : (
         <div className="space-y-3">
-          {filteredItems.map(item => (
-            <FeedbackCard key={item.id} item={item} />
+          {currentItems.map(item => (
+            <FeedbackCard key={item.id} item={item} tab={activeTab} />
           ))}
           <p className="text-center text-xs text-gray-400 dark:text-gray-600 py-4">
-            {filteredItems.length} item{filteredItems.length !== 1 ? 's' : ''} · sorted by priority
+            {currentItems.length} item{currentItems.length !== 1 ? 's' : ''}
+            {activeTab === 'active' ? ' · sorted by priority' : ''}
           </p>
         </div>
       )}

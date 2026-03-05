@@ -17,6 +17,11 @@ function loadAdminConfig() {
   }
 }
 
+function getYourName() {
+  const config = loadAdminConfig()
+  return config.yourName?.trim() || null
+}
+
 export function FeedbackProvider({ children }) {
   const [items, setItems] = useState(SEED_ITEMS)
   const [filters, setFilters] = useState({
@@ -43,7 +48,23 @@ export function FeedbackProvider({ children }) {
   }, [])
 
   const dismissItem = useCallback((id) => {
-    setItems(prev => prev.map(item => item.id === id ? { ...item, status: 'Dismissed' } : item))
+    const dismissedBy = getYourName()
+    const dismissedAt = new Date().toISOString()
+    setItems(prev => prev.map(item =>
+      item.id === id ? { ...item, status: 'Dismissed', dismissedBy, dismissedAt } : item
+    ))
+  }, [])
+
+  const saveForLater = useCallback((id) => {
+    setItems(prev => prev.map(item =>
+      item.id === id ? { ...item, status: 'Saved' } : item
+    ))
+  }, [])
+
+  const restoreItem = useCallback((id) => {
+    setItems(prev => prev.map(item =>
+      item.id === id ? { ...item, status: 'New', dismissedBy: null, dismissedAt: null } : item
+    ))
   }, [])
 
   const getItem = useCallback((id) => items.find(item => item.id === id) ?? null, [items])
@@ -112,28 +133,50 @@ export function FeedbackProvider({ children }) {
   }, [])
 
   // ── Derived state ───────────────────────────────────────────────────────────
-  const filteredItems = useMemo(() => {
-    return items
+  // Base filter (no status — tabs handle that)
+  const applyBaseFilters = useCallback((list) => {
+    return list
       .filter(item => {
         if (filters.type !== 'All' && item.category !== filters.type) return false
         if (filters.priority !== 'All' && item.priority !== filters.priority) return false
         if (filters.team !== 'All' && item.team !== filters.team) return false
-        if (filters.status !== 'All' && item.status !== filters.status) return false
         if (filters.search.trim()) {
           const s = filters.search.trim().toLowerCase()
+          const summaryMatch = item.summary.toLowerCase().includes(s)
           const authorMatch = item.author.name.toLowerCase().includes(s)
           const mentionedMatch = item.mentioned.some(m => m.name.toLowerCase().includes(s))
-          if (!authorMatch && !mentionedMatch) return false
+          if (!summaryMatch && !authorMatch && !mentionedMatch) return false
         }
         return true
       })
       .sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority])
-  }, [items, filters])
+  }, [filters])
+
+  const activeItems = useMemo(() =>
+    applyBaseFilters(items.filter(i => i.status === 'New' || i.status === 'In Review')),
+  [items, applyBaseFilters])
+
+  const savedItems = useMemo(() =>
+    applyBaseFilters(items.filter(i => i.status === 'Saved')),
+  [items, applyBaseFilters])
+
+  const pushedItems = useMemo(() =>
+    applyBaseFilters(items.filter(i => i.status === 'Pushed')),
+  [items, applyBaseFilters])
+
+  const dismissedItems = useMemo(() =>
+    items.filter(i => i.status === 'Dismissed')
+      .sort((a, b) => new Date(b.dismissedAt ?? b.date) - new Date(a.dismissedAt ?? a.date)),
+  [items])
+
+  // Legacy: keep filteredItems for anything that still uses it
+  const filteredItems = activeItems
 
   const stats = useMemo(() => ({
-    active: items.filter(i => i.status !== 'Dismissed' && i.status !== 'Pushed').length,
-    high: items.filter(i => i.priority === 'High' && i.status !== 'Dismissed').length,
-    medium: items.filter(i => i.priority === 'Medium' && i.status !== 'Dismissed').length,
+    active: items.filter(i => i.status === 'New' || i.status === 'In Review').length,
+    saved: items.filter(i => i.status === 'Saved').length,
+    high: items.filter(i => i.priority === 'High' && (i.status === 'New' || i.status === 'In Review')).length,
+    medium: items.filter(i => i.priority === 'Medium' && (i.status === 'New' || i.status === 'In Review')).length,
     pushed: items.filter(i => i.status === 'Pushed').length,
     dismissed: items.filter(i => i.status === 'Dismissed').length,
   }), [items])
@@ -143,10 +186,16 @@ export function FeedbackProvider({ children }) {
       value={{
         items,
         filteredItems,
+        activeItems,
+        savedItems,
+        pushedItems,
+        dismissedItems,
         filters,
         updateFilter,
         updateItem,
         dismissItem,
+        saveForLater,
+        restoreItem,
         getItem,
         editModal,
         setEditModal,

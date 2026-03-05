@@ -26,6 +26,7 @@ const DEFAULT_PEOPLE = [
 ]
 
 const DEFAULT_CONFIG = {
+  yourName: '',
   slack: {
     token: '',
     channels: '',
@@ -594,11 +595,12 @@ export default function Admin() {
     setTimeout(() => setSaved(false), 2500)
   }
 
-  const updateSlack   = (key, val) => setConfig(c => ({ ...c, slack: { ...c.slack, [key]: val } }))
-  const updateGitHub  = (key, val) => setConfig(c => ({ ...c, github: { ...c.github, [key]: val } }))
-  const updateTeams   = updated   => setConfig(c => ({ ...c, teamMapping: updated }))
-  const updatePeople  = updated   => setConfig(c => ({ ...c, people: updated }))
-  const updateRefresh = (key, val) => setConfig(c => ({ ...c, refresh: { ...c.refresh, [key]: val } }))
+  const updateSlack    = (key, val) => setConfig(c => ({ ...c, slack: { ...c.slack, [key]: val } }))
+  const updateGitHub   = (key, val) => setConfig(c => ({ ...c, github: { ...c.github, [key]: val } }))
+  const updateTeams    = updated   => setConfig(c => ({ ...c, teamMapping: updated }))
+  const updatePeople   = updated   => setConfig(c => ({ ...c, people: updated }))
+  const updateRefresh  = (key, val) => setConfig(c => ({ ...c, refresh: { ...c.refresh, [key]: val } }))
+  const updateYourName = val       => setConfig(c => ({ ...c, yourName: val }))
 
   return (
     <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
@@ -631,6 +633,18 @@ export default function Admin() {
           {activeTab === 'Slack' && (
             <>
               <SectionHeader title="Slack Configuration" description="Bot token and channels to monitor when syncing feedback" />
+              {/* Your name — used to attribute Dismiss/Save actions */}
+              <div className="mb-6 pb-6 border-b border-gray-100 dark:border-gray-800">
+                <Field label="Your name" hint="shown when you dismiss or save items">
+                  <input
+                    type="text"
+                    value={config.yourName ?? ''}
+                    onChange={e => updateYourName(e.target.value)}
+                    className={inputClass + ' max-w-xs'}
+                    placeholder="e.g. Georgina"
+                  />
+                </Field>
+              </div>
               <SlackConfig slack={config.slack} onChange={updateSlack} />
             </>
           )}
