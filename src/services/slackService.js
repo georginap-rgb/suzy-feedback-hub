@@ -110,6 +110,27 @@ export async function fetchChannelHistory(token, channelId, lookbackHours = 24) 
   return messages
 }
 
+/**
+ * Fetch all replies in a thread.
+ * Returns the full array including the parent message (index 0).
+ * Callers should skip index 0 if they already have the parent.
+ */
+export async function fetchThreadReplies(token, channelId, threadTs) {
+  const messages = []
+  let cursor = undefined
+
+  do {
+    const body = { channel: channelId, ts: threadTs, limit: 100 }
+    if (cursor) body.cursor = cursor
+
+    const data = await slackPost(token, 'conversations.replies', body)
+    messages.push(...(data.messages ?? []))
+    cursor = data.has_more ? data.response_metadata?.next_cursor : undefined
+  } while (cursor)
+
+  return messages
+}
+
 /** Resolve a channel name (#tech_team_all) to its ID. Returns null if not found. */
 export async function resolveChannelName(token, nameOrId) {
   // If it looks like an ID already, return as-is

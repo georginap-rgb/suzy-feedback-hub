@@ -1,12 +1,25 @@
-import { createContext, useContext, useState, useCallback, useMemo } from 'react'
+import { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react'
 import { SEED_ITEMS, DAILY_DIGEST } from '../data/seedData'
-import { fetchUsers, fetchChannelHistory, resolveChannelName } from '../services/slackService'
-import { parseMessages, LOOKBACK_MAP } from '../utils/messageParser'
+import { fetchUsers, fetchChannelHistory, resolveChannelName, fetchThreadReplies } from '../services/slackService'
+import { parseMessages, cleanSlackText, LOOKBACK_MAP } from '../utils/messageParser'
 
 const FeedbackContext = createContext()
 
 const PRIORITY_ORDER = { High: 0, Medium: 1, Low: 2 }
 const ADMIN_CONFIG_KEY = 'suzy-admin-config'
+const ITEMS_KEY = 'suzy-items'
+
+function loadPersistedItems() {
+  try {
+    const raw = localStorage.getItem(ITEMS_KEY)
+    if (!raw) return SEED_ITEMS
+    const parsed = JSON.parse(raw)
+    // Validate it's an array with at least some items
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : SEED_ITEMS
+  } catch {
+    return SEED_ITEMS
+  }
+}
 
 function loadAdminConfig() {
   try {
@@ -23,7 +36,7 @@ function getYourName() {
 }
 
 export function FeedbackProvider({ children }) {
-  const [items, setItems] = useState(SEED_ITEMS)
+  const [items, setItems] = useState(loadPersistedItems)
   const [filters, setFilters] = useState({
     type: 'All',
     priority: 'All',
@@ -38,6 +51,11 @@ export function FeedbackProvider({ children }) {
   const [isLoading, setIsLoading] = useState(false)
   const [syncError, setSyncError] = useState(null)
   const [lastSynced, setLastSynced] = useState(null)
+
+  // Persist items to localStorage so actions survive a page refresh
+  useEffect(() => {
+    try { localStorage.setItem(ITEMS_KEY, JSON.stringify(items)) } catch {}
+  }, [items])
 
   const updateFilter = useCallback((key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }))
@@ -56,14 +74,18 @@ export function FeedbackProvider({ children }) {
   }, [])
 
   const saveForLater = useCallback((id) => {
+    const savedBy = getYourName()
+    const savedAt = new Date().toISOString()
     setItems(prev => prev.map(item =>
-      item.id === id ? { ...item, status: 'Saved' } : item
+      item.id === id ? { ...item, status: 'Saved', savedBy, savedAt } : item
     ))
   }, [])
 
   const restoreItem = useCallback((id) => {
     setItems(prev => prev.map(item =>
-      item.id === id ? { ...item, status: 'New', dismissedBy: null, dismissedAt: null } : item
+      item.id === id
+        ? { ...item, status: 'New', dismissedBy: null, dismissedAt: null, savedBy: null, savedAt: null }
+        : item
     ))
   }, [])
 
@@ -103,7 +125,8 @@ export function FeedbackProvider({ children }) {
           }
           const messages = await fetchChannelHistory(token, channelId, lookbackHours)
           const channelLabel = line.startsWith('#') ? line : `#${line}`
-          const parsed = parseMessages(messages, usersMap, channelLabel)
+          // Pass channelId so items know where to fetch their threads
+          const parsed = parseMessages(messages, usersMap, channelLabel, channelId)
           allItems.push(...parsed)
         } catch (err) {
           errors.push(`${line}: ${err.message}`)
@@ -114,13 +137,44 @@ export function FeedbackProvider({ children }) {
         throw new Error(errors.join(' | '))
       }
 
-      // Merge: preserve any manual status overrides on matched items
+      // Fetch thread replies in parallel for any message that has them
+      const threaded = allItems.filter(i => i.replyCount > 0 && i.channelId && i.ts)
+      await Promise.allSettled(
+        threaded.map(async item => {
+          try {
+            const replyMsgs = await fetchThreadReplies(token, item.channelId, item.ts)
+            // replyMsgs[0] is the parent message itself — skip it
+            item.threadReplies = replyMsgs
+              .slice(1)
+              .filter(msg => !msg.bot_id && msg.text?.trim())
+              .map(msg => ({
+                author: usersMap.get(msg.user) ?? 'Unknown',
+                text: cleanSlackText(msg.text, usersMap),
+                date: new Date(parseFloat(msg.ts) * 1000).toISOString(),
+              }))
+          } catch {
+            // Thread fetch failure is non-fatal — item still shows without replies
+          }
+        })
+      )
+
+      // Merge: preserve manual status + attribution overrides from previous state
       setItems(prev => {
-        const statusMap = new Map(prev.map(i => [i.id, i.status]))
-        return allItems.map(item => ({
-          ...item,
-          status: statusMap.get(item.id) ?? item.status,
-        }))
+        const prevMap = new Map(prev.map(i => [i.id, i]))
+        return allItems.map(item => {
+          const old = prevMap.get(item.id)
+          if (!old) return item
+          return {
+            ...item,
+            status: old.status ?? item.status,
+            dismissedBy: old.dismissedBy ?? null,
+            dismissedAt: old.dismissedAt ?? null,
+            savedBy: old.savedBy ?? null,
+            savedAt: old.savedAt ?? null,
+            githubIssueUrl: old.githubIssueUrl ?? null,
+            githubIssueNumber: old.githubIssueNumber ?? null,
+          }
+        })
       })
 
       setLastSynced(new Date())

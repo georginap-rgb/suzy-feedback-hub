@@ -126,7 +126,10 @@ export default function FeedbackCard({ item, tab = 'active' }) {
             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
             </svg>
-            <span>Saved for later</span>
+            <span>
+              Saved for later{item.savedBy ? ` by ${item.savedBy}` : ''}
+              {item.savedAt ? ` · ${formatShortDate(item.savedAt)}` : ''}
+            </span>
           </div>
         )}
 
@@ -154,7 +157,7 @@ export default function FeedbackCard({ item, tab = 'active' }) {
         )}
       </div>
 
-      {/* Collapsible original message */}
+      {/* Collapsible original message + thread */}
       <div className="px-5 pb-1">
         <button
           onClick={() => setExpanded(v => !v)}
@@ -166,14 +169,51 @@ export default function FeedbackCard({ item, tab = 'active' }) {
           >
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
           </svg>
-          <span>{expanded ? 'Hide' : 'Show'} original message</span>
+          <span>
+            {expanded ? 'Hide' : 'Show'} {item.threadReplies?.length > 0
+              ? `thread (${item.threadReplies.length + 1} messages)`
+              : 'original message'}
+          </span>
         </button>
 
         {expanded && (
-          <div className="mt-1.5 mb-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-            <p className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap font-mono">
-              {item.originalMessage}
-            </p>
+          <div className="mt-1.5 mb-3 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+            {/* Original message */}
+            <div className="bg-gray-50 dark:bg-gray-800 px-3 py-2.5">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">{item.author.name}</span>
+                <span className="text-[10px] text-gray-400 dark:text-gray-500">{formatDate(item.date)}</span>
+              </div>
+              <p className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
+                {item.originalMessage}
+              </p>
+            </div>
+
+            {/* Thread replies */}
+            {item.threadReplies?.length > 0 && (
+              <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                {item.threadReplies.map((reply, i) => (
+                  <div key={i} className="px-3 py-2.5 bg-white dark:bg-gray-900">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">{reply.author}</span>
+                      <span className="text-[10px] text-gray-400 dark:text-gray-500">{formatDate(reply.date)}</span>
+                    </div>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed whitespace-pre-wrap">
+                      {reply.text}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* No replies note */}
+            {(!item.threadReplies || item.threadReplies.length === 0) && item.replyCount > 0 && (
+              <div className="px-3 py-2 bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800">
+                <p className="text-[11px] text-gray-400 dark:text-gray-500 italic">
+                  {item.replyCount} repl{item.replyCount === 1 ? 'y' : 'ies'} — sync Slack to load thread
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>

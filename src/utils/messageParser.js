@@ -142,12 +142,13 @@ const LOOKBACK_MAP = { '24h': 24, '48h': 48, '7d': 168 }
 /**
  * Convert raw Slack API messages into feedback items.
  *
- * @param {object[]} messages  - raw messages from conversations.history
- * @param {Map}      usersMap  - userId → displayName from fetchUsers()
+ * @param {object[]} messages    - raw messages from conversations.history
+ * @param {Map}      usersMap    - userId → displayName from fetchUsers()
  * @param {string}   channelName - '#tech_team_all' or channel ID
+ * @param {string}   [channelId] - channel ID for thread fetching (e.g. C08XXXXXXX)
  * @returns {object[]} feedback items matching the app schema
  */
-export function parseMessages(messages, usersMap, channelName) {
+export function parseMessages(messages, usersMap, channelName, channelId = null) {
   return messages
     .filter(msg =>
       msg.type === 'message' &&
@@ -166,6 +167,9 @@ export function parseMessages(messages, usersMap, channelName) {
 
       return {
         id: msg.ts.replace('.', '-'),
+        ts: msg.ts,                         // original Slack timestamp
+        channelId: channelId ?? null,       // for thread fetching
+        replyCount: msg.reply_count ?? 0,   // > 0 means there's a thread
         date,
         channel: channelName,
         category,
@@ -176,6 +180,7 @@ export function parseMessages(messages, usersMap, channelName) {
         author: { name: authorName, initials: getInitials(authorName) },
         mentioned,
         originalMessage: clean,
+        threadReplies: [],  // populated by syncFromSlack after thread fetch
       }
     })
     .sort((a, b) => {
