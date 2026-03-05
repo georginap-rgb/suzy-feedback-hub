@@ -2,7 +2,7 @@
   "name": "suzy-feedback-hub",
   "private": true,
   "version": "0.1.0",
-  "homepage": "https://georginap.github.io/suzy-feedback-hub",
+  "homepage": "https://georginap-rgb.github.io/suzy-feedback-hub",
   "type": "module",
   "scripts": {
     "dev": "vite",
