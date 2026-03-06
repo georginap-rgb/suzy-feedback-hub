@@ -1,12 +1,18 @@
-async function ask(prompt) {
-  const res = await fetch('/api/ai', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt }),
+import OpenAI from 'openai'
+
+function getClient() {
+  const apiKey = import.meta.env.VITE_OPENAI_API_KEY?.trim()
+  if (!apiKey) return null
+  return new OpenAI({ apiKey, dangerouslyAllowBrowser: true })
+}
+
+async function ask(client, prompt) {
+  const res = await client.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.3,
   })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data.error || `AI request failed (${res.status})`)
-  return data.text ?? ''
+  return res.choices[0]?.message?.content?.trim() ?? ''
 }
 
 /**
@@ -15,6 +21,9 @@ async function ask(prompt) {
  * @returns {{ discussion: string, gaps: string|null, participants: string[] } | null}
  */
 export async function summarizeThread(originalMessage, replies) {
+  const client = getClient()
+  if (!client) return null
+
   const replyText = replies.length > 0
     ? replies.map(r => `${r.author}: ${r.text}`).join('\n')
     : ''
@@ -24,7 +33,7 @@ export async function summarizeThread(originalMessage, replies) {
     : `Message:\n${originalMessage}`
 
   try {
-    const raw = await ask(
+    const raw = await ask(client,
       `Analyze this Slack product team thread and return a JSON object with exactly these keys:
 - "discussion": 1-2 sentences summarizing what was discussed or requested
 - "gaps": 1 sentence on unresolved questions or next steps (null if fully resolved)
@@ -44,7 +53,6 @@ Return ONLY valid JSON, nothing else.\n\n${fullThread}`
       return { discussion: cleaned.slice(0, 300), gaps: null, participants: [] }
     }
   } catch (err) {
-    if (err.message === 'AI not configured') return null
     throw new Error(`Thread summary failed: ${err.message}`)
   }
 }
@@ -54,14 +62,15 @@ Return ONLY valid JSON, nothing else.\n\n${fullThread}`
  * Returns a map of item id → summary string.
  */
 export async function batchSummarizeItems(items) {
-  if (items.length === 0) return {}
+  const client = getClient()
+  if (!client || items.length === 0) return {}
 
   const numbered = items
     .map((item, i) => `${i + 1}. ${item.originalMessage.slice(0, 400)}`)
     .join('\n\n')
 
   try {
-    const raw = await ask(
+    const raw = await ask(client,
       `You are a product manager assistant. For each Slack message below, write exactly 1 sentence that clearly states: what the feedback is about, who/what is affected, and what action or decision is needed. Be specific and professional. Write in third person.
 
 Example: "The login flow has a redirect loop after password reset that is blocking multiple users and needs immediate investigation."
@@ -82,7 +91,6 @@ Return ONLY a numbered list matching the input numbers, one item per line, no ex
     }
     return map
   } catch (err) {
-    if (err.message === 'AI not configured') return {}
     throw new Error(`Item summaries failed: ${err.message}`)
   }
 }
@@ -92,7 +100,8 @@ Return ONLY a numbered list matching the input numbers, one item per line, no ex
  * Returns null if AI is not configured or call fails.
  */
 export async function summarizeDashboard(items) {
-  if (items.length === 0) return null
+  const client = getClient()
+  if (!client || items.length === 0) return null
 
   const bullets = items
     .slice(0, 30)
@@ -100,7 +109,7 @@ export async function summarizeDashboard(items) {
     .join('\n')
 
   try {
-    return await ask(
+    return await ask(client,
       `You are summarising open product feedback for a PM team. Below are the active feedback items. Write 2-3 sentences covering the main themes, most urgent issues, and any patterns. Be direct and actionable. No preamble.\n\n${bullets}`
     )
   } catch {
