@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useCallback, useMemo, useEffect } 
 import { SEED_ITEMS, DAILY_DIGEST } from '../data/seedData'
 import { fetchUsers, fetchChannelHistory, resolveChannelName, fetchThreadReplies } from '../services/slackService'
 import { parseMessages, cleanSlackText, LOOKBACK_MAP } from '../utils/messageParser'
+import { summarizeThread, summarizeDashboard, batchSummarizeItems } from '../services/aiService'
 
 const FeedbackContext = createContext()
 
@@ -51,11 +52,19 @@ export function FeedbackProvider({ children }) {
   const [isLoading, setIsLoading] = useState(false)
   const [syncError, setSyncError] = useState(null)
   const [lastSynced, setLastSynced] = useState(null)
+  const [dashboardSummary, setDashboardSummary] = useState(null)
 
   // Persist items to localStorage so actions survive a page refresh
   useEffect(() => {
     try { localStorage.setItem(ITEMS_KEY, JSON.stringify(items)) } catch {}
   }, [items])
+
+  // Auto-sync from Slack on mount if token is configured
+  useEffect(() => {
+    if (import.meta.env.VITE_SLACK_TOKEN?.trim()) {
+      syncFromSlack()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateFilter = useCallback((key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }))
@@ -94,10 +103,10 @@ export function FeedbackProvider({ children }) {
   // ── Slack sync ──────────────────────────────────────────────────────────────
   const syncFromSlack = useCallback(async () => {
     const config = loadAdminConfig()
-    const token = config.slack?.token?.trim() || import.meta.env.VITE_SLACK_TOKEN?.trim()
+    const token = import.meta.env.VITE_SLACK_TOKEN?.trim() || config.slack?.token?.trim()
     const channelLines = (
-      config.slack?.channels?.trim() ||
       import.meta.env.VITE_SLACK_CHANNEL?.trim() ||
+      config.slack?.channels?.trim() ||
       ''
     ).split('\n').map(s => s.trim()).filter(Boolean)
     const lookbackKey = config.slack?.lookback ?? '24h'
@@ -116,7 +125,9 @@ export function FeedbackProvider({ children }) {
     setSyncError(null)
 
     try {
-      const usersMap = await fetchUsers(token)
+      // users:read scope is optional — fall back to empty map if missing
+      let usersMap = new Map()
+      try { usersMap = await fetchUsers(token) } catch {}
       const allItems = []
       const errors = []
 
@@ -162,6 +173,19 @@ export function FeedbackProvider({ children }) {
         })
       )
 
+      // AI: generate thread summaries sequentially to avoid rate limiting
+      let aiWarning = null
+      for (const item of allItems.filter(i => i.threadReplies?.length > 0)) {
+        try {
+          const summary = await summarizeThread(item.originalMessage, item.threadReplies)
+          if (summary) item.threadSummary = summary
+        } catch (err) {
+          aiWarning = `AI thread summary: ${err.message}`
+          console.error('[AI] thread summary error:', err)
+          break
+        }
+      }
+
       // Merge: preserve manual status + attribution overrides from previous state
       setItems(prev => {
         const prevMap = new Map(prev.map(i => [i.id, i]))
@@ -177,12 +201,37 @@ export function FeedbackProvider({ children }) {
             savedAt: old.savedAt ?? null,
             githubIssueUrl: old.githubIssueUrl ?? null,
             githubIssueNumber: old.githubIssueNumber ?? null,
+            threadSummary: item.threadSummary ?? old.threadSummary ?? null,
           }
         })
       })
 
+      // AI: generate clean 1-sentence summaries for each item
+      batchSummarizeItems(allItems)
+        .then(summaryMap => {
+          if (Object.keys(summaryMap).length > 0) {
+            setItems(prev => prev.map(item =>
+              summaryMap[item.id] ? { ...item, summary: summaryMap[item.id] } : item
+            ))
+          }
+        })
+        .catch(err => {
+          console.error('[AI] batch summary error:', err)
+          setSyncError(`AI summaries failed: ${err.message}`)
+        })
+
+      // AI: generate top-level dashboard summary from active items
+      const activeItems = allItems.filter(i => i.status === 'New')
+      summarizeDashboard(activeItems)
+        .then(s => { if (s) setDashboardSummary(s) })
+        .catch(err => console.error('[AI] dashboard summary error:', err))
+
       setLastSynced(new Date())
-      if (errors.length > 0) setSyncError(`Partial sync — ${errors.join(' | ')}`)
+      const allWarnings = [
+        ...(errors.length > 0 ? [`Partial sync — ${errors.join(' | ')}`] : []),
+        ...(aiWarning ? [aiWarning] : []),
+      ]
+      if (allWarnings.length > 0) setSyncError(allWarnings.join(' · '))
     } catch (err) {
       setSyncError(err.message)
     } finally {
@@ -266,6 +315,7 @@ export function FeedbackProvider({ children }) {
         setSyncError,
         lastSynced,
         syncFromSlack,
+        dashboardSummary,
       }}
     >
       {children}
