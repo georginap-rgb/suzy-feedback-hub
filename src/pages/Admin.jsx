@@ -33,7 +33,7 @@ const DEFAULT_CONFIG = {
     lookback: '24h',
   },
   github: {
-    token: '',
+    token: import.meta.env.VITE_GITHUB_TOKEN?.trim() ?? '',
     repo: 'crowdtap/suzy.onesuzy',
     org: 'crowdtap',
     projectNumber: 2,

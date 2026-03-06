@@ -6,11 +6,15 @@ import { searchRepoContext, createIssue, addIssueToProject } from '../../service
 const STORAGE_KEY = 'suzy-admin-config'
 
 function loadGitHubConfig() {
+  let stored = {}
   try {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored) return JSON.parse(stored)?.github ?? {}
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) stored = JSON.parse(raw)?.github ?? {}
   } catch {}
-  return {}
+  return {
+    ...stored,
+    token: stored.token?.trim() || import.meta.env.VITE_GITHUB_TOKEN?.trim() || '',
+  }
 }
 
 function buildIssueBody(item, contextFiles = []) {
@@ -37,7 +41,7 @@ ${item.originalMessage}
 ${item.author.name}${item.mentioned.length > 0 ? `\n\n## Also Mentioned\n${item.mentioned.map(m => m.name).join(', ')}` : ''}${contextSection}
 
 ---
-*Created via [Suzy Feedback Hub](https://georginap-rgb.github.io/suzy-feedback-hub/) from ${item.channel}*`
+*Created via [Feedback Queue](https://georginap-rgb.github.io/suzy-feedback-hub/) from ${item.channel}*`
 }
 
 function CloseButton({ onClick }) {

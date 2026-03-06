@@ -27,11 +27,11 @@ export default function Header() {
           {/* Logo */}
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-suzy-pink flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-xs font-bold leading-none">S</span>
+              <span className="text-white text-xs font-bold leading-none">FQ</span>
             </div>
             <div className="flex items-baseline gap-1.5">
-              <span className="font-semibold text-gray-900 dark:text-gray-100 text-sm tracking-tight">Suzy</span>
-              <span className="text-gray-400 dark:text-gray-500 text-sm font-normal">Feedback Hub</span>
+              <span className="font-semibold text-gray-900 dark:text-gray-100 text-sm tracking-tight">Feedback</span>
+              <span className="text-gray-400 dark:text-gray-500 text-sm font-normal">Queue</span>
             </div>
           </div>
 
