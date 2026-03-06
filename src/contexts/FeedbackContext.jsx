@@ -94,8 +94,12 @@ export function FeedbackProvider({ children }) {
   // ── Slack sync ──────────────────────────────────────────────────────────────
   const syncFromSlack = useCallback(async () => {
     const config = loadAdminConfig()
-    const token = config.slack?.token?.trim()
-    const channelLines = (config.slack?.channels ?? '').split('\n').map(s => s.trim()).filter(Boolean)
+    const token = config.slack?.token?.trim() || import.meta.env.VITE_SLACK_TOKEN?.trim()
+    const channelLines = (
+      config.slack?.channels?.trim() ||
+      import.meta.env.VITE_SLACK_CHANNEL?.trim() ||
+      ''
+    ).split('\n').map(s => s.trim()).filter(Boolean)
     const lookbackKey = config.slack?.lookback ?? '24h'
     const lookbackHours = LOOKBACK_MAP[lookbackKey] ?? 24
 
