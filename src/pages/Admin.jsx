@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { DEFAULT_TEAM_MAPPING } from '../utils/teamDetection'
 import { testAuth, listChannels } from '../services/slackService'
 import { testGitHubAuth } from '../services/githubService'
+import { testConnection, hasOpenAIKey } from '../services/aiService'
 
 const STORAGE_KEY = 'suzy-admin-config'
 
@@ -535,6 +536,85 @@ function PeopleMapping({ people, onChange }) {
   )
 }
 
+// ── AI Config ─────────────────────────────────────────────────────────────────
+function AIConfig() {
+  const keyPresent = hasOpenAIKey()
+  const [testState, setTestState] = useState(null)
+
+  const handleTest = async () => {
+    setTestState('loading')
+    try {
+      const msg = await testConnection()
+      setTestState({ ok: true, message: msg })
+    } catch (err) {
+      setTestState({ ok: false, message: err.message })
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Key status */}
+      <div className="flex items-center gap-2.5">
+        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${keyPresent ? 'bg-green-500' : 'bg-red-400'}`} />
+        <span className="text-sm text-gray-700 dark:text-gray-300">
+          {keyPresent ? 'API key is present in this build' : 'No API key found in this build'}
+        </span>
+      </div>
+
+      {!keyPresent && (
+        <div className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2.5 space-y-1">
+          <p className="font-medium">Key missing from build</p>
+          <p>Go to your GitHub repo → Settings → Secrets and variables → Actions, then update <code className="font-mono bg-amber-100 dark:bg-amber-900/40 px-1 rounded">VITE_OPENAI_API_KEY</code> and re-run the deploy workflow.</p>
+        </div>
+      )}
+
+      {/* Test button */}
+      <div>
+        <button
+          onClick={handleTest}
+          disabled={testState === 'loading' || !keyPresent}
+          className="px-4 py-2 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+        >
+          {testState === 'loading' ? (
+            <span className="flex items-center gap-1.5">
+              <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Testing…
+            </span>
+          ) : 'Test AI Connection'}
+        </button>
+
+        {testState && testState !== 'loading' && (
+          <div className={`mt-2 flex items-start gap-2 text-xs px-3 py-2 rounded-lg ${
+            testState.ok
+              ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800'
+              : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800'
+          }`}>
+            <span className="mt-0.5">{testState.ok ? '✓' : '✗'}</span>
+            <span>{testState.message}</span>
+          </div>
+        )}
+      </div>
+
+      {/* What AI does */}
+      <div className="pt-1 border-t border-gray-100 dark:border-gray-800">
+        <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2.5">AI is used for:</p>
+        <ul className="space-y-1.5 text-xs text-gray-500 dark:text-gray-400">
+          <li className="flex items-start gap-2"><span className="text-gray-300 dark:text-gray-600 mt-0.5">→</span>Filtering Slack messages to genuine product feedback only (removes chit-chat, link shares)</li>
+          <li className="flex items-start gap-2"><span className="text-gray-300 dark:text-gray-600 mt-0.5">→</span>Generating action-focused 1-sentence summaries for each feedback item</li>
+          <li className="flex items-start gap-2"><span className="text-gray-300 dark:text-gray-600 mt-0.5">→</span>Summarizing thread discussions into key points and open questions</li>
+          <li className="flex items-start gap-2"><span className="text-gray-300 dark:text-gray-600 mt-0.5">→</span>Dashboard digest of active feedback themes</li>
+        </ul>
+        <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">
+          The key is baked into the build at deploy time. To change it, update the GitHub secret and redeploy.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 // ── Refresh Schedule ──────────────────────────────────────────────────────────
 function RefreshSchedule({ refresh, onChange }) {
   return (
@@ -579,7 +659,7 @@ function SaveBanner({ saved }) {
 }
 
 // ── Admin Page ────────────────────────────────────────────────────────────────
-const TABS = ['Slack', 'GitHub', 'Teams', 'People', 'Schedule']
+const TABS = ['Slack', 'GitHub', 'AI', 'Teams', 'People', 'Schedule']
 
 export default function Admin() {
   const [config, setConfig] = useState(loadConfig)
@@ -652,6 +732,12 @@ export default function Admin() {
             <>
               <SectionHeader title="GitHub Configuration" description="Target repo and project board for pushed issues" />
               <GitHubConfig github={config.github} onChange={updateGitHub} />
+            </>
+          )}
+          {activeTab === 'AI' && (
+            <>
+              <SectionHeader title="OpenAI Configuration" description="Verify your API key and understand how AI is used during Slack sync" />
+              <AIConfig />
             </>
           )}
           {activeTab === 'Teams' && (

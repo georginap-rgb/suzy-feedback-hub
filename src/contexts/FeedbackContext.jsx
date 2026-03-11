@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useCallback, useMemo, useEffect } 
 import { SEED_ITEMS, DAILY_DIGEST } from '../data/seedData'
 import { fetchUsers, fetchChannelHistory, resolveChannelName, fetchThreadReplies } from '../services/slackService'
 import { parseMessages, cleanSlackText, LOOKBACK_MAP } from '../utils/messageParser'
-import { summarizeThread, summarizeDashboard, batchSummarizeItems } from '../services/aiService'
+import { summarizeThread, summarizeDashboard, batchSummarizeItems, classifyFeedback } from '../services/aiService'
 
 const FeedbackContext = createContext()
 
@@ -128,7 +128,7 @@ export function FeedbackProvider({ children }) {
       // users:read scope is optional — fall back to empty map if missing
       let usersMap = new Map()
       try { usersMap = await fetchUsers(token) } catch {}
-      const allItems = []
+      let allItems = []
       const errors = []
 
       for (const line of channelLines) {
@@ -150,6 +150,14 @@ export function FeedbackProvider({ children }) {
 
       if (allItems.length === 0 && errors.length > 0) {
         throw new Error(errors.join(' | '))
+      }
+
+      // AI: filter out chit-chat, link shares, and non-feedback (best-effort — falls back to keyword filter on failure)
+      try {
+        const feedbackIds = await classifyFeedback(allItems.map(i => ({ id: i.id, text: i.originalMessage })))
+        allItems = allItems.filter(i => feedbackIds.has(i.id))
+      } catch (err) {
+        console.warn('[AI] classification skipped:', err.message)
       }
 
       // Fetch thread replies in parallel for any message that has them

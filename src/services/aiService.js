@@ -1,18 +1,21 @@
-async function ask(prompt) {
-  const apiKey = import.meta.env.VITE_OPENAI_API_KEY?.trim()
+const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
+
+function getKey() {
+  return import.meta.env.VITE_OPENAI_API_KEY?.trim() ?? ''
+}
+
+export function hasOpenAIKey() {
+  return Boolean(getKey())
+}
+
+async function post(messages, opts = {}) {
+  const apiKey = getKey()
   if (!apiKey) return null
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  const res = await fetch(OPENAI_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.3,
-    }),
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({ model: 'gpt-4o-mini', messages, temperature: 0.3, ...opts }),
   })
 
   if (!res.ok) {
@@ -22,6 +25,84 @@ async function ask(prompt) {
 
   const data = await res.json()
   return data.choices[0]?.message?.content?.trim() ?? ''
+}
+
+async function ask(prompt) {
+  return post([{ role: 'user', content: prompt }])
+}
+
+/** Test the API key with a minimal call. Throws with a clear message on failure. */
+export async function testConnection() {
+  const apiKey = getKey()
+  if (!apiKey) throw new Error('No API key in this build — update VITE_OPENAI_API_KEY in GitHub secrets and redeploy')
+  const reply = await post(
+    [{ role: 'user', content: 'Reply with the single word "ok"' }],
+    { temperature: 0, max_tokens: 5 }
+  )
+  if (!reply) throw new Error('Empty response from OpenAI')
+  return 'Connected — gpt-4o-mini is responding correctly'
+}
+
+/** Classify a batch of ≤20 items, returning the Set of IDs that are genuine product feedback. */
+async function classifyBatch(items) {
+  const apiKey = getKey()
+  if (!apiKey) return new Set(items.map(i => i.id))
+
+  const numbered = items.map((item, i) => `${i + 1}. ${item.text.slice(0, 250)}`).join('\n\n')
+
+  const res = await fetch(OPENAI_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      temperature: 0,
+      max_tokens: 60,
+      messages: [{
+        role: 'user',
+        content: `You are filtering Slack messages from a product team. Identify which are genuine product feedback: bug reports, feature requests, UX/usability issues, or internal process problems.
+
+EXCLUDE: chit-chat, greetings, emoji-only messages, links to articles or news with no discussion, announcements, meeting notes, and off-topic conversations.
+
+Reply with ONLY the numbers of feedback messages, comma-separated (e.g. "1,3,5"), or "none" if there are none.
+
+Messages:
+${numbered}`,
+      }],
+    }),
+  })
+
+  if (!res.ok) return new Set(items.map(i => i.id)) // fallback: keep all
+
+  const data = await res.json()
+  const raw = (data.choices[0]?.message?.content ?? '').trim().toLowerCase()
+
+  if (raw === 'none') return new Set()
+
+  const kept = new Set()
+  for (const n of raw.split(',')) {
+    const idx = parseInt(n.trim(), 10) - 1
+    if (idx >= 0 && idx < items.length) kept.add(items[idx].id)
+  }
+  // If the response was garbled and nothing parsed, fall back to keeping all
+  return kept.size > 0 ? kept : new Set(items.map(i => i.id))
+}
+
+/**
+ * Use AI to filter a list of items down to genuine product feedback.
+ * Falls back to keeping all items if the API key is missing or the call fails.
+ * @param {{ id: string, text: string }[]} items
+ * @returns {Promise<Set<string>>} IDs of items to keep
+ */
+export async function classifyFeedback(items) {
+  if (!items.length) return new Set()
+  const BATCH = 20
+  const kept = new Set()
+  for (let i = 0; i < items.length; i += BATCH) {
+    const chunk = items.slice(i, i + BATCH)
+    const chunkKept = await classifyBatch(chunk)
+    for (const id of chunkKept) kept.add(id)
+  }
+  return kept
 }
 
 /**
