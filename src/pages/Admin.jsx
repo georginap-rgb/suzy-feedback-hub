@@ -101,23 +101,67 @@ const inputClass =
 
 const textareaClass = inputClass + ' resize-none leading-relaxed font-mono'
 
+// ── Shared token status row ────────────────────────────────────────────────────
+function TokenStatus({ label, present }) {
+  return (
+    <div className="flex items-center justify-between py-2.5 px-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+      <span className="text-xs font-medium text-gray-600 dark:text-gray-400">{label}</span>
+      <span className={`flex items-center gap-1.5 text-xs font-medium ${present ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${present ? 'bg-green-500' : 'bg-red-400'}`} />
+        {present ? 'Configured' : 'Not set'}
+      </span>
+    </div>
+  )
+}
+
+function TestButton({ onTest, state }) {
+  return (
+    <div>
+      <button
+        onClick={onTest}
+        disabled={state === 'loading'}
+        className="px-4 py-2 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+      >
+        {state === 'loading' ? (
+          <span className="flex items-center gap-1.5">
+            <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Testing…
+          </span>
+        ) : 'Test Connection'}
+      </button>
+      {state && state !== 'loading' && (
+        <div className={`mt-2 flex items-start gap-2 text-xs px-3 py-2 rounded-lg ${
+          state.ok
+            ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800'
+            : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800'
+        }`}>
+          <span className="mt-0.5">{state.ok ? '✓' : '✗'}</span>
+          <span>{state.message}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Slack Config ──────────────────────────────────────────────────────────────
 function SlackConfig({ slack, onChange }) {
-  const [showToken, setShowToken] = useState(false)
-  const [testState, setTestState] = useState(null) // null | 'loading' | { ok, message, channels }
-  const [channels, setChannels] = useState(null)
+  const [testState, setTestState] = useState(null)
+  const token = import.meta.env.VITE_SLACK_TOKEN?.trim()
+  const channels = import.meta.env.VITE_SLACK_CHANNEL?.trim()
+    ?.split('\n').map(s => s.trim()).filter(Boolean) ?? []
 
-  const handleTestConnection = async () => {
-    if (!slack.token?.trim()) {
-      setTestState({ ok: false, message: 'Enter a Bot Token first.' })
+  const handleTest = async () => {
+    if (!token) {
+      setTestState({ ok: false, message: 'VITE_SLACK_TOKEN is not set in this build — update the GitHub secret and redeploy.' })
       return
     }
     setTestState('loading')
     try {
-      const auth = await testAuth(slack.token.trim())
-      const chList = await listChannels(slack.token.trim())
-      setChannels(chList)
-      setTestState({ ok: true, message: `Connected as ${auth.user} on ${auth.team}. Found ${chList.length} channels.` })
+      const auth = await testAuth(token)
+      setTestState({ ok: true, message: `Connected as ${auth.user} on ${auth.team}.` })
     } catch (err) {
       setTestState({ ok: false, message: err.message })
     }
@@ -125,112 +169,22 @@ function SlackConfig({ slack, onChange }) {
 
   return (
     <div className="space-y-4">
-      {/* Token */}
-      <Field
-        label="Bot Token"
-        hint="starts with xoxb-"
-      >
-        <div className="relative">
-          <input
-            type={showToken ? 'text' : 'password'}
-            value={slack.token ?? ''}
-            onChange={e => onChange('token', e.target.value)}
-            className={inputClass + ' pr-20'}
-            placeholder="xoxb-XXXXXXXXXXXXXXXXXXXXXXXX"
-            autoComplete="off"
-            spellCheck="false"
-          />
-          <button
-            type="button"
-            onClick={() => setShowToken(v => !v)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 font-medium transition-colors"
-          >
-            {showToken ? 'Hide' : 'Show'}
-          </button>
-        </div>
-        <p className="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
-          Create a Slack app at{' '}
-          <a href="https://api.slack.com/apps" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600 dark:hover:text-gray-300">
-            api.slack.com/apps
-          </a>
-          {' '}with scopes:{' '}
-          <code className="font-mono text-[11px] bg-gray-100 dark:bg-gray-800 px-1 rounded">channels:history</code>{' '}
-          <code className="font-mono text-[11px] bg-gray-100 dark:bg-gray-800 px-1 rounded">channels:read</code>{' '}
-          <code className="font-mono text-[11px] bg-gray-100 dark:bg-gray-800 px-1 rounded">users:read</code>{' '}
-          <code className="font-mono text-[11px] bg-gray-100 dark:bg-gray-800 px-1 rounded">groups:history</code>
+      {/* Read-only token status */}
+      <div className="space-y-2">
+        <TokenStatus label="Bot Token (VITE_SLACK_TOKEN)" present={Boolean(token)} />
+        {channels.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {channels.map(id => (
+              <span key={id} className="font-mono text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700">{id}</span>
+            ))}
+          </div>
+        )}
+        <p className="text-xs text-gray-400 dark:text-gray-500">
+          Tokens are set via GitHub secrets and baked into the build. To change them, update <code className="font-mono text-[11px] bg-gray-100 dark:bg-gray-700 px-1 rounded">VITE_SLACK_TOKEN</code> / <code className="font-mono text-[11px] bg-gray-100 dark:bg-gray-700 px-1 rounded">VITE_SLACK_CHANNEL</code> in your repo secrets and redeploy.
         </p>
-      </Field>
-
-      {/* Test connection */}
-      <div>
-        <button
-          onClick={handleTestConnection}
-          disabled={testState === 'loading'}
-          className="px-4 py-2 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-        >
-          {testState === 'loading' ? (
-            <span className="flex items-center gap-1.5">
-              <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              Testing…
-            </span>
-          ) : 'Test Connection'}
-        </button>
-
-        {testState && testState !== 'loading' && (
-          <div className={`mt-2 flex items-start gap-2 text-xs px-3 py-2 rounded-lg ${
-            testState.ok
-              ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800'
-              : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800'
-          }`}>
-            <span className="mt-0.5">{testState.ok ? '✓' : '✗'}</span>
-            <span>{testState.message}</span>
-          </div>
-        )}
-
-        {/* Channel picker */}
-        {channels && channels.length > 0 && (
-          <div className="mt-3">
-            <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
-              Click a channel to add its ID to the list below:
-            </p>
-            <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-              {channels.map(ch => (
-                <button
-                  key={ch.id}
-                  onClick={() => {
-                    const current = slack.channels ?? ''
-                    const lines = current.split('\n').map(s => s.trim()).filter(Boolean)
-                    if (!lines.includes(ch.id)) {
-                      onChange('channels', [...lines, ch.id].join('\n'))
-                    }
-                  }}
-                  className="px-2 py-0.5 text-xs rounded-md bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-400 transition-colors font-mono"
-                  title={`ID: ${ch.id}`}
-                >
-                  #{ch.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* Channels */}
-      <Field label="Channel IDs to monitor" hint="one per line — use IDs like C08XXXXXXX, or click channels above">
-        <textarea
-          rows={4}
-          value={slack.channels ?? ''}
-          onChange={e => onChange('channels', e.target.value)}
-          className={textareaClass}
-          placeholder={'C08ABC1234\nC08DEF5678'}
-        />
-        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-          Find channel IDs in Slack: right-click a channel → View channel details → scroll to bottom.
-        </p>
-      </Field>
+      <TestButton onTest={handleTest} state={testState} />
 
       {/* Lookback */}
       <Field label="Lookback window">
@@ -256,17 +210,17 @@ function SlackConfig({ slack, onChange }) {
 
 // ── GitHub Config ─────────────────────────────────────────────────────────────
 function GitHubConfig({ github, onChange }) {
-  const [showToken, setShowToken] = useState(false)
   const [testState, setTestState] = useState(null)
+  const token = import.meta.env.VITE_GITHUB_TOKEN?.trim()
 
   const handleTest = async () => {
-    if (!github.token?.trim()) {
-      setTestState({ ok: false, message: 'Enter a Personal Access Token first.' })
+    if (!token) {
+      setTestState({ ok: false, message: 'VITE_GITHUB_TOKEN is not set in this build — update the GitHub secret and redeploy.' })
       return
     }
     setTestState('loading')
     try {
-      const { login } = await testGitHubAuth(github.token.trim())
+      const { login } = await testGitHubAuth(token)
       setTestState({ ok: true, message: `Connected as @${login}` })
     } catch (err) {
       setTestState({ ok: false, message: err.message })
@@ -275,63 +229,15 @@ function GitHubConfig({ github, onChange }) {
 
   return (
     <div className="space-y-4">
-      <Field label="Personal Access Token" hint="needs repo + project scopes">
-        <div className="relative">
-          <input
-            type={showToken ? 'text' : 'password'}
-            value={github.token ?? ''}
-            onChange={e => onChange('token', e.target.value)}
-            className={inputClass + ' pr-20'}
-            placeholder="ghp_XXXXXXXXXXXXXXXXXXXX"
-            autoComplete="off"
-            spellCheck="false"
-          />
-          <button
-            type="button"
-            onClick={() => setShowToken(v => !v)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 font-medium transition-colors"
-          >
-            {showToken ? 'Hide' : 'Show'}
-          </button>
-        </div>
-        <p className="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
-          Create at{' '}
-          <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600 dark:hover:text-gray-300">
-            github.com/settings/tokens
-          </a>
-          {' '}with scopes:{' '}
-          <code className="font-mono text-[11px] bg-gray-100 dark:bg-gray-800 px-1 rounded">repo</code>{' '}
-          <code className="font-mono text-[11px] bg-gray-100 dark:bg-gray-800 px-1 rounded">project</code>
+      {/* Read-only token status */}
+      <div className="space-y-2">
+        <TokenStatus label="Personal Access Token (VITE_GITHUB_TOKEN)" present={Boolean(token)} />
+        <p className="text-xs text-gray-400 dark:text-gray-500">
+          Token is set via GitHub secrets. To change it, update <code className="font-mono text-[11px] bg-gray-100 dark:bg-gray-700 px-1 rounded">VITE_GITHUB_TOKEN</code> in your repo secrets and redeploy.
         </p>
-      </Field>
-
-      <div>
-        <button
-          onClick={handleTest}
-          disabled={testState === 'loading'}
-          className="px-4 py-2 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-        >
-          {testState === 'loading' ? (
-            <span className="flex items-center gap-1.5">
-              <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              Testing…
-            </span>
-          ) : 'Test Connection'}
-        </button>
-        {testState && testState !== 'loading' && (
-          <div className={`mt-2 flex items-start gap-2 text-xs px-3 py-2 rounded-lg ${
-            testState.ok
-              ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800'
-              : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800'
-          }`}>
-            <span className="mt-0.5">{testState.ok ? '✓' : '✗'}</span>
-            <span>{testState.message}</span>
-          </div>
-        )}
       </div>
+
+      <TestButton onTest={handleTest} state={testState} />
 
       <Field label="Repository" hint="org/repo">
         <input type="text" value={github.repo ?? 'crowdtap/suzy.onesuzy'} onChange={e => onChange('repo', e.target.value)} className={inputClass} placeholder="crowdtap/suzy.onesuzy" />
