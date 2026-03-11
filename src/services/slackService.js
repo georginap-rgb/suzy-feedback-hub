@@ -1,16 +1,15 @@
 const SLACK_API = 'https://slack.com/api'
 
 async function slackPost(token, method, body = {}) {
-  const params = new URLSearchParams(body)
   let res
   try {
     res = await fetch(`${SLACK_API}/${method}`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
-      body: params.toString(),
+      body: JSON.stringify(body),
     })
   } catch (networkErr) {
     throw new Error(`Network error reaching Slack — check your connection or token. (${networkErr.message})`)
