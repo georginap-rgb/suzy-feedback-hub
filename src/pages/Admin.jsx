@@ -29,8 +29,8 @@ const DEFAULT_PEOPLE = [
 const DEFAULT_CONFIG = {
   yourName: '',
   slack: {
-    token: '',
-    channels: '',
+    token: import.meta.env.VITE_SLACK_TOKEN?.trim() ?? '',
+    channels: import.meta.env.VITE_SLACK_CHANNEL?.trim() ?? '',
     lookback: '24h',
   },
   github: {
@@ -53,11 +53,17 @@ function loadConfig() {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored) {
       const parsed = JSON.parse(stored)
+      // For token fields, prefer non-empty value (env var wins over an empty localStorage entry)
+      const mergeTokens = (defaults, saved) => ({
+        ...defaults,
+        ...saved,
+        token: saved.token?.trim() || defaults.token,
+      })
       return {
         ...DEFAULT_CONFIG,
         ...parsed,
-        slack: { ...DEFAULT_CONFIG.slack, ...parsed.slack },
-        github: { ...DEFAULT_CONFIG.github, ...parsed.github },
+        slack: mergeTokens(DEFAULT_CONFIG.slack, parsed.slack ?? {}),
+        github: mergeTokens(DEFAULT_CONFIG.github, parsed.github ?? {}),
         refresh: { ...DEFAULT_CONFIG.refresh, ...parsed.refresh },
         people: parsed.people ?? DEFAULT_PEOPLE,
         teamMapping: parsed.teamMapping ?? DEFAULT_TEAM_MAPPING,
