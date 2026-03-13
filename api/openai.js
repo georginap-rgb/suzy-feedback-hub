@@ -24,7 +24,9 @@ export default async function handler(req, res) {
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}))
-    return res.status(response.status).json({ error: err.error?.message || `OpenAI error (${response.status})` })
+    // Remap OpenAI's 401/403 to 502 so the client doesn't confuse it with our session auth
+    const status = response.status === 401 || response.status === 403 ? 502 : response.status
+    return res.status(status).json({ error: err.error?.message || `OpenAI error (${response.status})` })
   }
 
   res.json(await response.json())
