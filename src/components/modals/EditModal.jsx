@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useFeedback } from '../../contexts/FeedbackContext'
 
 const PRIORITIES = ['High', 'Medium', 'Low']
-const CATEGORIES = ['Bug Report', 'Feature Request', 'Process Issue']
+const CATEGORIES = ['Bug Report', 'Feature Request', 'Process Issue', 'UX']
 const STATUSES = ['New', 'In Review', 'Pushed', 'Dismissed']
 
 const PRIORITY_ACTIVE = {

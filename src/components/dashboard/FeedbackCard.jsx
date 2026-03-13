@@ -1,6 +1,10 @@
 import { useState } from 'react'
 import { useFeedback } from '../../contexts/FeedbackContext'
 
+const PM_ROUTING = {
+  UX: 'Brock Prescott',
+}
+
 const PRIORITY_STYLES = {
   High: {
     border: 'border-l-red-500',
@@ -45,7 +49,7 @@ function GitHubIcon() {
 }
 
 export default function FeedbackCard({ item, tab = 'active' }) {
-  const [expanded, setExpanded] = useState(false)
+  const [threadOpen, setThreadOpen] = useState(false)
   const { setEditModal, setGithubModal, dismissItem, saveForLater, restoreItem } = useFeedback()
 
   const priorityStyles = PRIORITY_STYLES[item.priority] ?? PRIORITY_STYLES.Medium
@@ -88,20 +92,38 @@ export default function FeedbackCard({ item, tab = 'active' }) {
           {item.summary}
         </p>
 
-        {/* Author */}
+        {/* Author + Slack link */}
         <div className="flex items-center gap-2 mb-2">
           <span className="text-xs text-gray-400 dark:text-gray-500 w-[72px] shrink-0">Posted by</span>
           <span className="text-xs text-gray-700 dark:text-gray-300 font-medium">{item.author.name}</span>
-          {item.channel && (
-            <span className="text-xs text-gray-400 dark:text-gray-500">in {item.channel}</span>
+          {item.slackUrl && (
+            <a
+              href={item.slackUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="View in Slack"
+              className="ml-0.5 text-[#4A154B] dark:text-purple-400 hover:opacity-70 transition-opacity"
+            >
+              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zm10.122 2.521a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.268 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zm-2.523 10.122a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.268a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"/>
+              </svg>
+            </a>
           )}
         </div>
 
-        {/* Mentioned */}
+        {/* PM Owner (category-based routing) */}
+        {PM_ROUTING[item.category] && (
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs text-gray-400 dark:text-gray-500 w-[72px] shrink-0">PM Owner</span>
+            <span className="text-xs text-gray-700 dark:text-gray-300 font-medium">{PM_ROUTING[item.category]}</span>
+          </div>
+        )}
+
+        {/* Affects (tagged users or team) */}
         {item.mentioned.length > 0 && (
           <div className="flex items-start gap-2 mb-1">
-            <span className="text-xs text-gray-400 dark:text-gray-500 w-[72px] shrink-0">Mentioned</span>
-            <span className="text-xs text-gray-700 dark:text-gray-300">
+            <span className="text-xs text-gray-400 dark:text-gray-500 w-[72px] shrink-0">Affects</span>
+            <span className="text-xs text-gray-700 dark:text-gray-300 font-medium">
               {item.mentioned.map(p => p.name).join(', ')}
             </span>
           </div>
@@ -148,71 +170,66 @@ export default function FeedbackCard({ item, tab = 'active' }) {
           </div>
         )}
 
-        {/* Thread summary (if available) */}
-        {item.threadSummary && (
-          <div className="mt-3 p-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800">
-            <p className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-0.5">Thread summary</p>
-            <p className="text-xs text-blue-600 dark:text-blue-400 leading-relaxed">{item.threadSummary}</p>
-          </div>
-        )}
-      </div>
-
-      {/* Collapsible original message + thread */}
-      <div className="px-5 pb-1">
-        <button
-          onClick={() => setExpanded(v => !v)}
-          className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors py-1"
-        >
-          <svg
-            className={`w-3 h-3 transition-transform ${expanded ? 'rotate-90' : ''}`}
-            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-          </svg>
-          <span>
-            {expanded ? 'Hide' : 'Show'} {item.threadReplies?.length > 0
-              ? `thread (${item.threadReplies.length + 1} messages)`
-              : 'original message'}
-          </span>
-        </button>
-
-        {expanded && (
-          <div className="mt-1.5 mb-3 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-            {/* Original message */}
-            <div className="bg-gray-50 dark:bg-gray-800 px-3 py-2.5">
-              <div className="flex items-center gap-2 mb-1.5">
-                <span className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">{item.author.name}</span>
-                <span className="text-[10px] text-gray-400 dark:text-gray-500">{formatDate(item.date)}</span>
-              </div>
-              <p className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
-                {item.originalMessage}
+        {/* Thread insights panel — collapsible */}
+        {item.replyCount > 0 && (
+          <div className="mt-3 rounded-lg border border-blue-100 dark:border-blue-800 overflow-hidden">
+            <button
+              onClick={() => setThreadOpen(v => !v)}
+              className="w-full flex items-center justify-between px-3 py-2 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+            >
+              <p className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
+                Thread insights · {item.replyCount} repl{item.replyCount === 1 ? 'y' : 'ies'}
               </p>
-            </div>
+              <svg
+                className={`w-3.5 h-3.5 text-blue-400 transition-transform ${threadOpen ? 'rotate-180' : ''}`}
+                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
 
-            {/* Thread replies */}
-            {item.threadReplies?.length > 0 && (
-              <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                {item.threadReplies.map((reply, i) => (
-                  <div key={i} className="px-3 py-2.5 bg-white dark:bg-gray-900">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">{reply.author}</span>
-                      <span className="text-[10px] text-gray-400 dark:text-gray-500">{formatDate(reply.date)}</span>
+            {threadOpen && (
+            <div className="px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 border-t border-blue-100 dark:border-blue-800">
+              {item.threadSummary && typeof item.threadSummary === 'object' ? (
+                <>
+                  {item.threadSummary.discussion && (
+                    <div className="mb-2">
+                      <p className="text-[10px] font-semibold text-blue-500 dark:text-blue-400 uppercase tracking-wider mb-0.5">Discussed</p>
+                      <p className="text-xs text-blue-800 dark:text-blue-200 leading-relaxed">{item.threadSummary.discussion}</p>
                     </div>
-                    <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed whitespace-pre-wrap">
-                      {reply.text}
+                  )}
+                  {item.threadSummary.gaps && (
+                    <div className="mb-2">
+                      <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider mb-0.5">Open gaps</p>
+                      <p className="text-xs text-blue-800 dark:text-blue-200 leading-relaxed">{item.threadSummary.gaps}</p>
+                    </div>
+                  )}
+                  {item.threadSummary.participants?.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-semibold text-blue-500 dark:text-blue-400 uppercase tracking-wider mb-0.5">Participants</p>
+                      <p className="text-xs text-blue-700 dark:text-blue-300">{item.threadSummary.participants.join(', ')}</p>
+                    </div>
+                  )}
+                </>
+              ) : item.threadSummary && typeof item.threadSummary === 'string' ? (
+                /* Legacy string format */
+                <p className="text-xs text-blue-700 dark:text-blue-200 leading-relaxed">{item.threadSummary}</p>
+              ) : item.threadReplies?.length > 0 ? (
+                /* Replies loaded but AI summary not yet available */
+                <>
+                  <p className="text-xs text-blue-500 dark:text-blue-400 italic mb-2">AI analysis will appear after next sync</p>
+                  <div>
+                    <p className="text-[10px] font-semibold text-blue-500 dark:text-blue-400 uppercase tracking-wider mb-0.5">Participants</p>
+                    <p className="text-xs text-blue-700 dark:text-blue-300">
+                      {[item.author.name, ...[...new Set(item.threadReplies.map(r => r.author))]].join(', ')}
                     </p>
                   </div>
-                ))}
-              </div>
-            )}
-
-            {/* No replies note */}
-            {(!item.threadReplies || item.threadReplies.length === 0) && item.replyCount > 0 && (
-              <div className="px-3 py-2 bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800">
-                <p className="text-[11px] text-gray-400 dark:text-gray-500 italic">
-                  {item.replyCount} repl{item.replyCount === 1 ? 'y' : 'ies'} — sync Slack to load thread
-                </p>
-              </div>
+                </>
+              ) : (
+                /* Thread exists but not yet loaded */
+                <p className="text-xs text-blue-500 dark:text-blue-400 italic">Sync Slack to load thread insights</p>
+              )}
+            </div>
             )}
           </div>
         )}
@@ -275,22 +292,6 @@ export default function FeedbackCard({ item, tab = 'active' }) {
                   <GitHubIcon />
                   → GitHub
                 </button>
-              )}
-
-              {/* Slack link */}
-              {item.slackUrl && (
-                <a
-                  href={item.slackUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[#4A154B]/10 dark:bg-[#4A154B]/30 text-[#4A154B] dark:text-purple-300 border border-[#4A154B]/20 dark:border-purple-700 hover:bg-[#4A154B]/20 transition-colors flex items-center gap-1.5"
-                  title="Open in Slack"
-                >
-                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zm10.122 2.521a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.268 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zm-2.523 10.122a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.268a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"/>
-                  </svg>
-                  Slack
-                </a>
               )}
 
               {/* Restore if saved */}

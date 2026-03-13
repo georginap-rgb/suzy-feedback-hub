@@ -59,9 +59,9 @@ export function FeedbackProvider({ children }) {
     try { localStorage.setItem(ITEMS_KEY, JSON.stringify(items)) } catch {}
   }, [items])
 
-  // Auto-sync from Slack on mount if token is configured
+  // Auto-sync from Slack on mount if channels are configured
   useEffect(() => {
-    if (import.meta.env.VITE_SLACK_TOKEN?.trim()) {
+    if (import.meta.env.VITE_SLACK_CHANNEL?.trim()) {
       syncFromSlack()
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -103,7 +103,6 @@ export function FeedbackProvider({ children }) {
   // ── Slack sync ──────────────────────────────────────────────────────────────
   const syncFromSlack = useCallback(async () => {
     const config = loadAdminConfig()
-    const token = import.meta.env.VITE_SLACK_TOKEN?.trim() || config.slack?.token?.trim()
     const channelLines = (
       import.meta.env.VITE_SLACK_CHANNEL?.trim() ||
       config.slack?.channels?.trim() ||
@@ -112,10 +111,6 @@ export function FeedbackProvider({ children }) {
     const lookbackKey = config.slack?.lookback ?? '24h'
     const lookbackHours = LOOKBACK_MAP[lookbackKey] ?? 24
 
-    if (!token) {
-      setSyncError('No Slack Bot Token configured. Add one in Admin → Slack.')
-      return
-    }
     if (channelLines.length === 0) {
       setSyncError('No channels configured. Add channel IDs in Admin → Slack.')
       return
@@ -127,18 +122,18 @@ export function FeedbackProvider({ children }) {
     try {
       // users:read scope is optional — fall back to empty map if missing
       let usersMap = new Map()
-      try { usersMap = await fetchUsers(token) } catch {}
+      try { usersMap = await fetchUsers() } catch {}
       let allItems = []
       const errors = []
 
       for (const line of channelLines) {
         try {
-          const channelId = await resolveChannelName(token, line)
+          const channelId = await resolveChannelName(null, line)
           if (!channelId) {
             errors.push(`Could not resolve channel: ${line}`)
             continue
           }
-          const messages = await fetchChannelHistory(token, channelId, lookbackHours)
+          const messages = await fetchChannelHistory(null, channelId, lookbackHours)
           const channelLabel = line.startsWith('#') ? line : `#${line}`
           // Pass channelId so items know where to fetch their threads
           const parsed = parseMessages(messages, usersMap, channelLabel, channelId)
@@ -165,7 +160,7 @@ export function FeedbackProvider({ children }) {
       await Promise.allSettled(
         threaded.map(async item => {
           try {
-            const replyMsgs = await fetchThreadReplies(token, item.channelId, item.ts)
+            const replyMsgs = await fetchThreadReplies(null, item.channelId, item.ts)
             // replyMsgs[0] is the parent message itself — skip it
             item.threadReplies = replyMsgs
               .slice(1)

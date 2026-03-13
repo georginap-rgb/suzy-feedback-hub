@@ -106,7 +106,7 @@ export default function Dashboard() {
     stats,
     githubModal, editModal,
     isLoading, syncError, setSyncError, lastSynced,
-    syncFromSlack,
+    syncFromSlack, dashboardSummary,
   } = useFeedback()
 
   const [activeTab, setActiveTab] = useState('active')
@@ -132,6 +132,14 @@ export default function Dashboard() {
       />
 
       <ErrorBanner message={syncError} onDismiss={() => setSyncError(null)} />
+
+      {/* AI Dashboard Summary */}
+      {dashboardSummary && (
+        <div className="mb-5 px-4 py-3.5 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800">
+          <p className="text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase tracking-wider mb-1">Feedback Summary</p>
+          <p className="text-sm text-indigo-900 dark:text-indigo-100 leading-relaxed">{dashboardSummary}</p>
+        </div>
+      )}
 
       <DailyDigest />
 

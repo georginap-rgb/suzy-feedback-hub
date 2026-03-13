@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useFeedback } from '../../contexts/FeedbackContext'
 
-const TYPES = ['All', 'Bug Report', 'Feature Request', 'Process Issue']
+const TYPES = ['All', 'Bug Report', 'Feature Request', 'Process Issue', 'UX']
 const PRIORITIES = ['All', 'High', 'Medium', 'Low']
 const TEAMS = ['All', 'intelligence', 'insights', 'impact', 'data']
 

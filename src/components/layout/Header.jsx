@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { useTheme } from '../../contexts/ThemeContext'
+import { useAuth } from '../../contexts/AuthContext'
 
 function SunIcon() {
   return (
@@ -19,6 +20,7 @@ function MoonIcon() {
 
 export default function Header() {
   const { theme, toggleTheme } = useTheme()
+  const { user } = useAuth()
 
   return (
     <header className="sticky top-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shadow-sm">
@@ -35,7 +37,7 @@ export default function Header() {
             </div>
           </div>
 
-          {/* Nav + theme */}
+          {/* Nav + user + theme */}
           <div className="flex items-center gap-1">
             <nav className="flex items-center rounded-lg bg-gray-100 dark:bg-gray-800 p-0.5 mr-2">
               <NavLink
@@ -63,6 +65,22 @@ export default function Header() {
                 Admin
               </NavLink>
             </nav>
+
+            {/* User info + sign out */}
+            {user && (
+              <div className="flex items-center gap-2 mr-2 pl-2 border-l border-gray-200 dark:border-gray-700">
+                {user.picture && (
+                  <img src={user.picture} alt="" className="w-6 h-6 rounded-full" referrerPolicy="no-referrer" />
+                )}
+                <span className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">{user.name}</span>
+                <a
+                  href="/api/auth/logout"
+                  className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                >
+                  Sign out
+                </a>
+              </div>
+            )}
 
             <button
               onClick={toggleTheme}

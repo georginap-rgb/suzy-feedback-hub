@@ -1,26 +1,18 @@
-const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
-
-function getKey() {
-  return import.meta.env.VITE_OPENAI_API_KEY?.trim() ?? ''
-}
-
 export function hasOpenAIKey() {
-  return Boolean(getKey())
+  return true // API key lives on the server
 }
 
 async function post(messages, opts = {}) {
-  const apiKey = getKey()
-  if (!apiKey) return null
-
-  const res = await fetch(OPENAI_URL, {
+  const res = await fetch('/api/openai', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: 'gpt-4o-mini', messages, temperature: 0.3, ...opts }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages, ...opts }),
   })
 
+  if (res.status === 401) throw new Error('Session expired — please sign in again.')
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.error?.message || `OpenAI error (${res.status})`)
+    throw new Error(err.error || `OpenAI error (${res.status})`)
   }
 
   const data = await res.json()
@@ -31,10 +23,8 @@ async function ask(prompt) {
   return post([{ role: 'user', content: prompt }])
 }
 
-/** Test the API key with a minimal call. Throws with a clear message on failure. */
+/** Test the connection. Throws with a clear message on failure. */
 export async function testConnection() {
-  const apiKey = getKey()
-  if (!apiKey) throw new Error('No API key in this build — update VITE_OPENAI_API_KEY in GitHub secrets and redeploy')
   const reply = await post(
     [{ role: 'user', content: 'Reply with the single word "ok"' }],
     { temperature: 0, max_tokens: 5 }
@@ -45,19 +35,11 @@ export async function testConnection() {
 
 /** Classify a batch of ≤20 items, returning the Set of IDs that are genuine product feedback. */
 async function classifyBatch(items) {
-  const apiKey = getKey()
-  if (!apiKey) return new Set(items.map(i => i.id))
-
   const numbered = items.map((item, i) => `${i + 1}. ${item.text.slice(0, 250)}`).join('\n\n')
 
-  const res = await fetch(OPENAI_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      temperature: 0,
-      max_tokens: 60,
-      messages: [{
+  try {
+    const raw = await post(
+      [{
         role: 'user',
         content: `You are filtering Slack messages from a product team. Identify which are genuine product feedback: bug reports, feature requests, UX/usability issues, or internal process problems.
 
@@ -68,23 +50,22 @@ Reply with ONLY the numbers of feedback messages, comma-separated (e.g. "1,3,5")
 Messages:
 ${numbered}`,
       }],
-    }),
-  })
+      { temperature: 0, max_tokens: 60 }
+    )
 
-  if (!res.ok) return new Set(items.map(i => i.id)) // fallback: keep all
+    if (!raw) return new Set(items.map(i => i.id))
+    const trimmed = raw.trim().toLowerCase()
+    if (trimmed === 'none') return new Set()
 
-  const data = await res.json()
-  const raw = (data.choices[0]?.message?.content ?? '').trim().toLowerCase()
-
-  if (raw === 'none') return new Set()
-
-  const kept = new Set()
-  for (const n of raw.split(',')) {
-    const idx = parseInt(n.trim(), 10) - 1
-    if (idx >= 0 && idx < items.length) kept.add(items[idx].id)
+    const kept = new Set()
+    for (const n of trimmed.split(',')) {
+      const idx = parseInt(n.trim(), 10) - 1
+      if (idx >= 0 && idx < items.length) kept.add(items[idx].id)
+    }
+    return kept.size > 0 ? kept : new Set(items.map(i => i.id))
+  } catch {
+    return new Set(items.map(i => i.id)) // fallback: keep all
   }
-  // If the response was garbled and nothing parsed, fall back to keeping all
-  return kept.size > 0 ? kept : new Set(items.map(i => i.id))
 }
 
 /**

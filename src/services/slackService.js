@@ -1,32 +1,27 @@
-const SLACK_API = 'https://slack.com/api'
-
-async function slackPost(token, method, body = {}) {
+async function slackPost(method, body = {}) {
   let res
   try {
-    res = await fetch(`${SLACK_API}/${method}`, {
+    res = await fetch('/api/slack', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method, body }),
     })
   } catch (networkErr) {
-    throw new Error(`Network error reaching Slack — check your connection or token. (${networkErr.message})`)
+    throw new Error(`Network error reaching Slack — check your connection. (${networkErr.message})`)
   }
 
-  if (!res.ok) throw new Error(`HTTP ${res.status} from Slack`)
+  if (res.status === 401) throw new Error('Session expired — please sign in again.')
+  if (!res.ok) throw new Error(`HTTP ${res.status} from proxy`)
 
   const data = await res.json()
   if (!data.ok) {
-    // Map common Slack errors to helpful messages
     const MESSAGES = {
-      invalid_auth: 'Invalid Slack token — check your Bot Token in Admin → Slack.',
-      not_authed: 'No Slack token provided — add a Bot Token in Admin → Slack.',
+      invalid_auth: 'Invalid Slack _token — contact your admin.',
+      not_authed: 'Slack bot _token not configured — contact your admin.',
       channel_not_found: 'Channel not found. Make sure you\'re using the channel ID (e.g. C08XXXXXXX), not the name.',
-      missing_scope: 'Bot token is missing required scopes. Needs: channels:history, channels:read, users:read.',
-      account_inactive: 'Slack account or token is inactive.',
-      token_revoked: 'Slack token has been revoked — generate a new one.',
+      missing_scope: 'Bot _token is missing required scopes. Needs: channels:history, channels:read, users:read.',
+      account_inactive: 'Slack account or _token is inactive.',
+      _token_revoked: 'Slack _token has been revoked — contact your admin.',
     }
     throw new Error(MESSAGES[data.error] ?? `Slack error: ${data.error}`)
   }
@@ -34,9 +29,9 @@ async function slackPost(token, method, body = {}) {
   return data
 }
 
-/** Test that a token is valid. Returns { user, team }. */
-export async function testAuth(token) {
-  const data = await slackPost(token, 'auth.test')
+/** Test that the bot _token is valid. Returns { user, team }. */
+export async function testAuth(_token) {
+  const data = await slackPost('auth.test')
   return { user: data.user, team: data.team, userId: data.user_id }
 }
 
@@ -44,7 +39,7 @@ export async function testAuth(token) {
  * Fetch all (non-bot, non-deleted) workspace members.
  * Returns a Map of { userId → displayName }.
  */
-export async function fetchUsers(token) {
+export async function fetchUsers(_token) {
   const map = new Map()
   let cursor = undefined
 
@@ -52,7 +47,7 @@ export async function fetchUsers(token) {
     const body = { limit: 200 }
     if (cursor) body.cursor = cursor
 
-    const data = await slackPost(token, 'users.list', body)
+    const data = await slackPost('users.list', body)
 
     for (const member of data.members ?? []) {
       if (member.deleted || member.is_bot || member.id === 'USLACKBOT') continue
@@ -75,7 +70,7 @@ export async function fetchUsers(token) {
  * List all channels the bot can see.
  * Returns [{ id, name }].
  */
-export async function listChannels(token) {
+export async function listChannels(_token) {
   const channels = []
   let cursor = undefined
 
@@ -83,7 +78,7 @@ export async function listChannels(token) {
     const body = { types: 'public_channel,private_channel', limit: 200, exclude_archived: true }
     if (cursor) body.cursor = cursor
 
-    const data = await slackPost(token, 'conversations.list', body)
+    const data = await slackPost('conversations.list', body)
     for (const ch of data.channels ?? []) {
       channels.push({ id: ch.id, name: ch.name })
     }
@@ -95,10 +90,9 @@ export async function listChannels(token) {
 
 /**
  * Fetch messages from a channel within the lookback window.
- * channelIdOrName: can be a channel ID (C08...) or resolved via listChannels.
  * lookbackHours: 24 | 48 | 168 (7d)
  */
-export async function fetchChannelHistory(token, channelId, lookbackHours = 24) {
+export async function fetchChannelHistory(_token, channelId, lookbackHours = 24) {
   const oldest = Math.floor(Date.now() / 1000) - lookbackHours * 3600
   const messages = []
   let cursor = undefined
@@ -107,7 +101,7 @@ export async function fetchChannelHistory(token, channelId, lookbackHours = 24) 
     const body = { channel: channelId, oldest: String(oldest), limit: 100, inclusive: false }
     if (cursor) body.cursor = cursor
 
-    const data = await slackPost(token, 'conversations.history', body)
+    const data = await slackPost('conversations.history', body)
     messages.push(...(data.messages ?? []))
     cursor = data.has_more ? data.response_metadata?.next_cursor : undefined
   } while (cursor)
@@ -120,7 +114,7 @@ export async function fetchChannelHistory(token, channelId, lookbackHours = 24) 
  * Returns the full array including the parent message (index 0).
  * Callers should skip index 0 if they already have the parent.
  */
-export async function fetchThreadReplies(token, channelId, threadTs) {
+export async function fetchThreadReplies(_token, channelId, threadTs) {
   const messages = []
   let cursor = undefined
 
@@ -128,7 +122,7 @@ export async function fetchThreadReplies(token, channelId, threadTs) {
     const body = { channel: channelId, ts: threadTs, limit: 100 }
     if (cursor) body.cursor = cursor
 
-    const data = await slackPost(token, 'conversations.replies', body)
+    const data = await slackPost('conversations.replies', body)
     messages.push(...(data.messages ?? []))
     cursor = data.has_more ? data.response_metadata?.next_cursor : undefined
   } while (cursor)
@@ -137,12 +131,12 @@ export async function fetchThreadReplies(token, channelId, threadTs) {
 }
 
 /** Resolve a channel name (#tech_team_all) to its ID. Returns null if not found. */
-export async function resolveChannelName(token, nameOrId) {
+export async function resolveChannelName(_token, nameOrId) {
   // If it looks like an ID already, return as-is
   if (/^[CGD][A-Z0-9]+$/.test(nameOrId)) return nameOrId
 
   const clean = nameOrId.replace(/^#/, '').toLowerCase()
-  const channels = await listChannels(token)
+  const channels = await listChannels(_token)
   const match = channels.find(c => c.name.toLowerCase() === clean)
   return match?.id ?? null
 }

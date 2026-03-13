@@ -49,7 +49,58 @@ export function extractMentions(rawText, usersMap, authorId) {
     })
 }
 
+// ── Feedback relevance detection ──────────────────────────────────────────────
+
+/** Product surface terms that strongly suggest product-related discussion */
+const PRODUCT_KW = [
+  'feature', 'button', 'page', 'screen', 'dashboard', 'report', 'survey',
+  'flow', 'experience', 'platform', 'integration', 'login', 'sign in', 'sign up',
+  'account', 'export', 'notification', 'onboarding', 'performance', 'template',
+  'api', 'modal', 'setting', 'filter', 'search', 'upload', 'download',
+  'mobile', 'desktop', 'interface', 'checkout', 'payment', 'response', 'result',
+  'chart', 'graph', 'metric', 'data', 'field', 'form', 'dropdown', 'widget',
+]
+
+/** Phrases that frame a message as feedback/concern/observation */
+const FEEDBACK_FRAMING_KW = [
+  'noticed', 'seems like', 'would be better', 'annoying', 'frustrating',
+  'confusing', 'hard to', 'difficult', 'wish', 'feedback', 'concern',
+  'ran into', 'having trouble', 'not able to', 'unable to',
+  'any thoughts', 'looks like', 'having an issue', 'keeps happening',
+  'users are', 'customers are', 'reported', 'complain', 'pain point',
+  'it would help', 'we should', 'has anyone',
+]
+
+/**
+ * Returns true if the cleaned message text is likely product feedback.
+ * Filters out link dumps, chit-chat, and off-topic messages.
+ */
+function isFeedbackMessage(cleanText) {
+  if (cleanText.trim().length < 40) return false
+
+  // Reject if the message is mostly a URL with no context
+  const textWithoutUrls = cleanText.replace(/https?:\/\/\S+/g, '').trim()
+  if (textWithoutUrls.length < 30) return false
+
+  const lower = cleanText.toLowerCase()
+  return (
+    scoreKeywords(lower, BUG_KW) > 0 ||
+    scoreKeywords(lower, FEATURE_KW) > 0 ||
+    scoreKeywords(lower, PROCESS_KW) > 0 ||
+    scoreKeywords(lower, PRODUCT_KW) > 0 ||
+    scoreKeywords(lower, FEEDBACK_FRAMING_KW) > 0
+  )
+}
+
 // ── Category detection ────────────────────────────────────────────────────────
+
+const UX_KW = [
+  'ux', 'user experience', 'usability', 'accessibility', 'design', 'ui design',
+  'user interface', 'layout', 'visual', 'navigation', 'user journey', 'user flow',
+  'user research', 'prototype', 'wireframe', 'figma', 'look and feel',
+  'hard to find', 'hard to use', 'confusing to', 'not intuitive', 'cluttered',
+  'overwhelming', 'ui feedback', 'design feedback', 'branding',
+]
 
 const BUG_KW = [
   'error', 'broken', 'not work', "doesn't work", "isn't work", 'failing', 'failed',
@@ -77,12 +128,14 @@ function scoreKeywords(text, keywords) {
 }
 
 export function detectCategory(text) {
+  const uxScore = scoreKeywords(text, UX_KW)
   const bugScore = scoreKeywords(text, BUG_KW)
   const featureScore = scoreKeywords(text, FEATURE_KW)
   const processScore = scoreKeywords(text, PROCESS_KW)
 
-  const max = Math.max(bugScore, featureScore, processScore)
-  if (max === 0) return 'Bug Report' // default
+  const max = Math.max(uxScore, bugScore, featureScore, processScore)
+  if (max === 0) return 'Feature Request' // default
+  if (uxScore === max) return 'UX'
   if (bugScore === max) return 'Bug Report'
   if (featureScore === max) return 'Feature Request'
   return 'Process Issue'
@@ -113,27 +166,31 @@ export function detectPriority(text) {
 
 // ── Summary generation ────────────────────────────────────────────────────────
 
-/** Take the first 1-2 meaningful sentences, cap at 160 chars */
+/** Take the first 2 meaningful sentences, cap at 220 chars */
 export function generateSummary(cleanText) {
-  const text = cleanText
-    .replace(/\n+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-
-  // Split on sentence-ending punctuation
+  const text = cleanText.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim()
   const parts = text.split(/(?<=[.!?])\s+/)
   let summary = ''
+  let sentences = 0
   for (const part of parts) {
-    if ((summary + part).length > 160) break
+    if (sentences >= 2) break
+    if ((summary + ' ' + part).trim().length > 220) break
     summary += (summary ? ' ' : '') + part
-    if (summary.length >= 60) break // at least one sentence worth
+    sentences++
   }
-
   if (!summary) summary = text
-
-  if (summary.length > 160) return summary.slice(0, 157) + '…'
+  if (summary.length > 220) return summary.slice(0, 217) + '…'
   return summary
 }
+
+/** Build a Slack deep-link URL for a message */
+function buildSlackUrl(workspaceUrl, channelId, ts) {
+  if (!channelId || !ts) return null
+  const tsPart = ts.replace('.', '')
+  return `${workspaceUrl}/archives/${channelId}/p${tsPart}`
+}
+
+const SLACK_WORKSPACE_URL = 'https://suzy.slack.com'
 
 // ── Full message parser ───────────────────────────────────────────────────────
 
@@ -154,7 +211,7 @@ export function parseMessages(messages, usersMap, channelName, channelId = null)
       msg.type === 'message' &&
       !msg.subtype &&          // skip joins, topic changes, etc.
       !msg.bot_id &&           // skip bot messages
-      msg.text?.trim().length > 20  // skip very short messages
+      msg.text?.trim().length > 30
     )
     .map(msg => {
       const authorName = usersMap.get(msg.user) ?? 'Unknown'
@@ -167,11 +224,12 @@ export function parseMessages(messages, usersMap, channelName, channelId = null)
 
       return {
         id: msg.ts.replace('.', '-'),
-        ts: msg.ts,                         // original Slack timestamp
-        channelId: channelId ?? null,       // for thread fetching
-        replyCount: msg.reply_count ?? 0,   // > 0 means there's a thread
+        ts: msg.ts,
+        channelId: channelId ?? null,
+        replyCount: msg.reply_count ?? 0,
         date,
         channel: channelName,
+        slackUrl: buildSlackUrl(SLACK_WORKSPACE_URL, channelId, msg.ts),
         category,
         priority,
         status: 'New',
@@ -180,9 +238,11 @@ export function parseMessages(messages, usersMap, channelName, channelId = null)
         author: { name: authorName, initials: getInitials(authorName) },
         mentioned,
         originalMessage: clean,
-        threadReplies: [],  // populated by syncFromSlack after thread fetch
+        threadReplies: [],
+        threadSummary: null,
       }
     })
+    .filter(item => isFeedbackMessage(item.originalMessage))
     .sort((a, b) => {
       const ORDER = { High: 0, Medium: 1, Low: 2 }
       return ORDER[a.priority] - ORDER[b.priority]

@@ -1,21 +1,20 @@
-const GITHUB_API = 'https://api.github.com'
-
-async function ghFetch(token, path, options = {}) {
-  const res = await fetch(`${GITHUB_API}${path}`, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
+async function ghFetch(_token, path, options = {}) {
+  const res = await fetch('/api/github', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: 'rest',
+      path,
+      method: options.method || 'GET',
+      body: options.body ? JSON.parse(options.body) : undefined,
+    }),
   })
 
+  if (res.status === 401) throw new Error('Session expired — please sign in again.')
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     const MESSAGES = {
-      401: 'Invalid GitHub token — check your Personal Access Token in Admin → GitHub.',
+      401: 'Invalid GitHub token — contact your admin.',
       403: 'Access forbidden — token needs "repo" and "project" scopes.',
       404: 'Not found — check the repo name and that your token has repo access.',
       422: 'Validation error — ' + (err.message ?? 'check issue fields.'),
@@ -26,16 +25,14 @@ async function ghFetch(token, path, options = {}) {
   return res.json()
 }
 
-async function ghGraphQL(token, query, variables = {}) {
-  const res = await fetch(`${GITHUB_API}/graphql`, {
+async function ghGraphQL(_token, query, variables = {}) {
+  const res = await fetch('/api/github', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ query, variables }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'graphql', query, variables }),
   })
 
+  if (res.status === 401) throw new Error('Session expired — please sign in again.')
   if (!res.ok) throw new Error(`GitHub GraphQL error: ${res.status}`)
 
   const data = await res.json()
